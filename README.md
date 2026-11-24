@@ -1,4 +1,4 @@
-# Wearwise — v1.1
+# Wearwise — v1.3
 
 Mobile-friendly progressive web app for weather-based personal clothing recommendations.
 
@@ -37,3 +37,10 @@ My data now has expandable saved weather summaries and hourly forecast tables. S
 - If the weather request fails, the app asks for explicit permission before saving an entry without a weather snapshot.
 - My data now offers **Attach available weather** on user-created records that have none, where the date is within the supported window. This fetches weather afterward and does **not** recover the exact forecast issued on the original date.
 - Weather fields in the snapshot are forecast/provider data, **not** independently observed measurements. Data are saved in browser local storage on that device; export backups regularly.
+
+## v1.3: Editable wardrobe
+
+- Settings → Manage your clothing options: add, rename, or delete choices for bottoms, base layers, additional layers and outer layers.
+- New options immediately appear in Daily log menus; old logs are never altered when clothing choices change.
+- Wardrobe customizations stay in the device's local storage and are now included in JSON exports. Importing older backups without wardrobe data leaves current choices unchanged.
+- The recommendation heuristic still uses existing clothing patterns and hardcoded baseline layers; adding an item to the wardrobe does not automatically teach the model its warmth characteristics.
