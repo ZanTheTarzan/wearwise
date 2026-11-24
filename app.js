@@ -16,6 +16,7 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.addEventListener('click',()
 for(let h=0;h<=23;h++){let text=`${String(h%12||12)} ${h<12?'AM':'PM'}`;for(let id of ['from','to']){const op=document.createElement('option');op.value=String(h);op.textContent=text;$(id).append(op)}}
 $('from').value='8';$('to').value='22';$('day').value=today();$('day').min=today();$('day').max=addDays(today(),15);$('logdate').value=today();
 try{let saved=JSON.parse(localStorage.getItem(SETTINGS)||'{}');if(saved.units)$('units').value=saved.units;if(saved.location){chosenLocation=saved.location;$('place').value=saved.location.name}}catch{}
+$('loglocation').value=chosenLocation.name;
 $('units').addEventListener('change',()=>{localStorage.setItem(SETTINGS,JSON.stringify({units:$('units').value,location:chosenLocation}));if(currentForecast)renderForecast(currentForecast)});
 async function searchPlaces(q){const r=await fetch('https://geocoding-api.open-meteo.com/v1/search?'+new URLSearchParams({name:q,count:7,language:'en',format:'json'}));if(!r.ok)throw new Error('Location search unavailable');return (await r.json()).results||[]}
 $('place').addEventListener('input',()=>{clearTimeout(searchTimer);const q=$('place').value.trim();$('suggestions').classList.add('hidden');if(q.length<2)return;searchTimer=setTimeout(async()=>{try{let places=await searchPlaces(q);if($('place').value.trim()!==q)return;const box=$('suggestions');box.innerHTML='';if(!places.length)return;places.forEach(p=>{let btn=document.createElement('button');btn.type='button';btn.textContent=[p.name,p.admin1,p.country].filter(Boolean).join(', ');btn.addEventListener('click',()=>{chosenLocation={name:btn.textContent,latitude:p.latitude,longitude:p.longitude,timezone:p.timezone};$('place').value=chosenLocation.name;box.classList.add('hidden');localStorage.setItem(SETTINGS,JSON.stringify({units:$('units').value,location:chosenLocation}))});box.append(btn)});box.classList.remove('hidden')}catch(e){note(e.message,true)}},300)});
@@ -43,8 +44,79 @@ const output=[base,middle,outer].filter(Boolean).join(' + ');let confidence='Low
 return {output,extras:acc,reason:reason.join(' '),confidence,matches:m}}
 function renderForecast(f){let r=recommend(f);$('outfit').textContent=r.output;$('why').textContent=r.reason+(r.extras.length?' Bring: '+[...new Set(r.extras)].join(', ')+'.':'');$('confidence').textContent=r.confidence;$('forecasttitle').textContent=`${f.place} · ${dateFmt(f.date)}`;$('max').textContent=temp(f.summary.high);$('min').textContent=temp(f.summary.low);$('feels').textContent=temp(f.summary.minFeel);$('wind').textContent=Math.round(f.summary.maxWind)+' mph';$('daynotes').textContent=`${f.summary.rainChance}% maximum hourly rain chance. ${f.summary.wet?'Rain protection advised.':'No strong rain signal during your selected hours.'} Personal estimates based on ${logs.length} daily records.`;$('timeline').innerHTML=f.rows.map(x=>`<div class="hour"><div>${esc(x.time.slice(11,16))}</div><div class="emoji">${wmo(x.code)[1]}</div><strong>${temp(x.temp)}</strong><small>Feels ${temp(x.feels)}</small><small>${Math.round(x.wind)} mph</small><small>${Math.round(x.precip)}% rain</small></div>`).join('');$('matches').innerHTML=r.matches.length?r.matches.map(x=>`<div class="historyitem"><div><b>${esc(dateFmt(x.date))} · ${esc(x.comfort)}</b><p>${esc([x.base,x.middle,x.outer].filter(Boolean).join(' + '))}</p><p>${esc(x.notes)}</p></div><div><span class="tag">${temp(x.summary.feels)} feels</span><span class="tag">${Math.round(x.summary.wind)} mph</span></div></div>`).join(''):'<div class="empty">No comparable examples yet.</div>'}
 $('recordthis').addEventListener('click',()=>{if(currentForecast){$('logdate').value=currentForecast.date;$('loglocation').value=currentForecast.place}switchTab('log')});
-$('logform').addEventListener('submit',e=>{e.preventDefault();const val=id=>$(id).value;const same=currentForecast?.date===val('logdate')&&currentForecast?.place===val('loglocation');const entry={id:'user-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),date:val('logdate'),location:val('loglocation'),bottom:val('bottom'),base:val('base'),middle:val('middle'),outer:val('outer'),accessories:['hat','scarf','gloves'].filter(id=>$(id).checked).join(', '),comfort:val('comfort'),activity:val('logactivity'),ill:$('sick').checked,notes:val('notes'),source:'user',summary:same?clone(currentForecast.summary):null,hourly:same?clone(currentForecast.rows):null};logs.unshift(entry);try{save();$('logstatus').textContent='Saved locally.';$('logform').reset();$('logdate').value=today()}catch(err){logs.shift();$('logstatus').textContent='Could not save; storage may be full.'}});
-function renderHistory(){const sorted=[...logs].sort((a,b)=>b.date.localeCompare(a.date));$('historycount').textContent=`${logs.length} days · ${logs.filter(x=>x.hourly?.length).length} logs with full hourly snapshots · ${logs.filter(x=>x.source==='historical-day-summary').length} starter summaries`;$('historylist').innerHTML=sorted.map(x=>`<div class="historyitem"><div><b>${esc(dateFmt(x.date))} <span class="badge">${esc(x.comfort)}</span></b><p>${esc([x.bottom,x.base,x.middle,x.outer,x.accessories].filter(Boolean).join(' · '))}</p><p>${esc(x.notes||'No notes')}</p><small class="subtle">${x.hourly?.length?x.hourly.length+' saved hourly points':x.summary?'Weather summary only':'No weather snapshot'}${x.ill?' · Illness flagged':''}</small></div><div>${x.source==='user'?`<button class="btn danger" data-delete="${esc(x.id)}">Delete</button>`:''}</div></div>`).join('');document.querySelectorAll('[data-delete]').forEach(b=>b.addEventListener('click',()=>{if(confirm('Delete this clothing log?')){logs=logs.filter(x=>x.id!==b.dataset.delete);save()}}))}
+// Retrieve the matching location/date automatically when recording a reflection. A fresh
+// API response is a new forecast, not proof of the weather that was actually observed.
+async function fetchSnapshot(date, location){
+  if(date<addDays(today(),-7)||date>addDays(today(),15))throw Error('Weather is available here for the past 7 days or next 15 days only');
+  const q=location.trim();
+  let loc;
+  if(q===chosenLocation.name&&Number.isFinite(chosenLocation.latitude))loc=chosenLocation;
+  else if(q==='Current location'&&Number.isFinite(chosenLocation.latitude))loc=chosenLocation;
+  else {
+    let matches=await searchPlaces(q);
+    if(!matches.length&&q.includes(','))matches=await searchPlaces(q.split(',')[0].trim());
+    if(!matches.length)throw Error('Location not found: '+q);
+    const m=matches[0];loc={name:[m.name,m.admin1,m.country].filter(Boolean).join(', '),latitude:m.latitude,longitude:m.longitude,timezone:m.timezone};
+  }
+  const params=new URLSearchParams({latitude:loc.latitude,longitude:loc.longitude,hourly:'temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,precipitation_probability,precipitation,weather_code',temperature_unit:'fahrenheit',wind_speed_unit:'mph',precipitation_unit:'mm',timezone:'auto',forecast_days:'16',past_days:'7'});
+  const resp=await fetch('https://api.open-meteo.com/v1/forecast?'+params);
+  if(!resp.ok)throw Error('Weather service error '+resp.status);
+  const json=await resp.json(),h=json.hourly;
+  if(!h||!Array.isArray(h.time))throw Error('Weather provider returned no hourly data');
+  const idx=h.time.map((t,i)=>t.startsWith(date+'T')?i:-1).filter(i=>i>=0);
+  if(!idx.length)throw Error('No hourly data for '+date);
+  const rows=idx.map(i=>({time:h.time[i],temp:h.temperature_2m[i],feels:h.apparent_temperature[i],humidity:h.relative_humidity_2m[i],wind:h.wind_speed_10m[i],precip:h.precipitation_probability[i],rain:h.precipitation[i],code:h.weather_code[i]}));
+  const valid=rows.filter(r=>Number.isFinite(r.temp)&&Number.isFinite(r.feels)&&Number.isFinite(r.wind));
+  if(!valid.length)throw Error('Hourly data missing temperature or wind');
+  const summary={high:max(valid.map(x=>x.temp)),low:min(valid.map(x=>x.temp)),feels:avg(valid.map(x=>x.feels)),wind:avg(valid.map(x=>x.wind)),maxWind:max(valid.map(x=>x.wind)),minFeel:min(valid.map(x=>x.feels)),wet:valid.some(x=>x.rain>=.2||x.precip>=50),rainChance:max(valid.map(x=>x.precip??0)),sunny:valid.filter(x=>x.code<=1).length/valid.length};
+  return {rows,summary,place:loc.name,kind:date<today()?'backfilled forecast':'forecast',capturedAt:new Date().toISOString()};
+}
+$('logform').addEventListener('submit',async e=>{
+  e.preventDefault();const val=id=>$(id).value;
+  const btn=$('logform').querySelector('button[type="submit"]');btn.disabled=true;
+  const status=$('logstatus');status.textContent='Retrieving hourly weather and saving…';
+  const entry={id:'user-'+Date.now()+'-'+Math.random().toString(36).slice(2,7),date:val('logdate'),location:val('loglocation').trim(),bottom:val('bottom'),base:val('base'),middle:val('middle'),outer:val('outer'),accessories:['hat','scarf','gloves'].filter(id=>$(id).checked).join(', '),comfort:val('comfort'),activity:val('logactivity'),ill:$('sick').checked,notes:val('notes'),source:'user',summary:null,hourly:null};
+  try{
+    const same=currentForecast?.date===entry.date&&currentForecast?.place===entry.location;
+    try{
+      let snap=same?{rows:currentForecast.rows,summary:currentForecast.summary,kind:'forecast',capturedAt:new Date().toISOString()}:await fetchSnapshot(entry.date,entry.location);
+      entry.summary=clone(snap.summary);entry.hourly=clone(snap.rows);entry.weatherSource=snap.kind;entry.weatherCapturedAt=snap.capturedAt;
+    }catch(err){
+      // Never silently turn a full training record into an unlabelled weatherless one.
+      if(!confirm('Could not attach hourly weather ('+err.message+'). Save clothing and notes WITHOUT weather anyway?')){status.textContent='Not saved; weather could not be retrieved. Your form is unchanged.';return;}
+      entry.weatherError=String(err.message);
+    }
+    logs.unshift(entry);
+    try{save()}catch(err){logs.shift();throw err}
+    status.textContent=entry.hourly?.length?'Saved with '+entry.hourly.length+' hourly weather readings'+(entry.weatherSource==='backfilled forecast'?' (retrieved afterward).':'.'):'Saved without weather at your request.';
+    $('logform').reset();$('logdate').value=today();
+  }catch(err){status.textContent='Save failed: '+err.message}
+  finally{btn.disabled=false}
+});
+function weatherDetail(x){
+  const summary=x.summary;
+  if(!summary)return '<p class="subtle">No forecast was attached to this entry. Earlier missing forecasts cannot be reconstructed from this saved record.</p>';
+  const summaryHtml=`<p><strong>Saved weather:</strong> High ${temp(summary.high)} · Low ${temp(summary.low)} · Mean feels-like ${temp(summary.feels)} · Lowest feels-like ${temp(summary.minFeel)} · Mean wind ${Number.isFinite(summary.wind)?Math.round(summary.wind)+' mph':'—'} · Peak wind ${Number.isFinite(summary.maxWind)?Math.round(summary.maxWind)+' mph':'—'} · Max rain probability ${Number.isFinite(summary.rainChance)?Math.round(summary.rainChance)+'%':'—'}</p>`;
+  if(!x.hourly?.length)return summaryHtml+'<p class="subtle">Only a weather summary is available for this historical entry.</p>';
+  const rows=x.hourly.map(h=>`<tr><td>${esc(h.time?.slice(11,16)||'—')}</td><td>${temp(h.temp)}</td><td>${temp(h.feels)}</td><td>${Number.isFinite(h.humidity)?Math.round(h.humidity)+'%':'—'}</td><td>${Number.isFinite(h.wind)?h.wind.toFixed(1)+' mph':'—'}</td><td>${Number.isFinite(h.precip)?Math.round(h.precip)+'%':'—'}</td><td>${Number.isFinite(h.rain)?h.rain.toFixed(1)+' mm':'—'}</td><td>${esc(wmo(h.code)[0])}</td></tr>`).join('');
+  return summaryHtml+`<div style="max-width:100%;overflow-x:auto"><table style="width:100%;font-size:12px;text-align:left;border-spacing:10px 8px;white-space:nowrap"><thead><tr><th>Hour</th><th>Temp</th><th>Feels</th><th>Humidity</th><th>Wind</th><th>Rain chance</th><th>Precip.</th><th>Conditions</th></tr></thead><tbody>${rows}</tbody></table></div><p class="subtle">Saved forecast at logging time, not verified observed weather.</p>`;
+}
+function renderHistory(){
+  const sorted=[...logs].sort((a,b)=>b.date.localeCompare(a.date));
+  $('historycount').textContent=`${logs.length} days · ${logs.filter(x=>x.hourly?.length).length} logs with full hourly snapshots · ${logs.filter(x=>x.source==='historical-day-summary').length} starter summaries`;
+  $('historylist').innerHTML=sorted.map(x=>`<div class="historyitem"><div style="flex:1;min-width:0"><b>${esc(dateFmt(x.date))} <span class="badge">${esc(x.comfort)}</span></b><p>${esc(x.location||'Location not recorded')}</p><p>${esc([x.bottom,x.base,x.middle,x.outer,x.accessories].filter(Boolean).join(' · '))}</p><p>${esc(x.notes||'No notes')}</p><small class="subtle">${x.hourly?.length?x.hourly.length+' saved hourly points':x.summary?'Weather summary only':'No weather snapshot'}${x.ill?' · Illness flagged':''}${x.weatherSource==='backfilled forecast'?' · Weather fetched after this date':''}</small>${x.source==='user'&&!x.hourly?.length?`<button class="btn" data-attach="${esc(x.id)}" style="margin-top:8px">Attach available weather</button>`:''}<details style="margin-top:9px"><summary style="cursor:pointer;color:#39866e;font-weight:600">View saved weather</summary><div style="padding:12px 0">${weatherDetail(x)}</div></details></div><div>${x.source==='user'?`<button class="btn danger" data-delete="${esc(x.id)}">Delete</button>`:''}</div></div>`).join('');
+  document.querySelectorAll('[data-delete]').forEach(b=>b.addEventListener('click',()=>{if(confirm('Delete this clothing log?')){logs=logs.filter(x=>x.id!==b.dataset.delete);save()}}));
+  document.querySelectorAll('[data-attach]').forEach(b=>b.addEventListener('click',async()=>{
+    const entry=logs.find(x=>x.id===b.dataset.attach);if(!entry)return;
+    b.disabled=true;b.textContent='Fetching weather…';
+    try{
+      const snap=await fetchSnapshot(entry.date,entry.location);
+      entry.summary=clone(snap.summary);entry.hourly=clone(snap.rows);entry.weatherSource=snap.kind;entry.weatherCapturedAt=snap.capturedAt;
+      save();
+      alert('Attached '+entry.hourly.length+' hourly readings. Weather retrieved now may differ from the forecast originally seen.');
+    }catch(err){b.disabled=false;b.textContent='Attach available weather';alert('Could not attach weather: '+err.message)}
+  }));
+}
 $('export').addEventListener('click',()=>{let blob=new Blob([JSON.stringify({app:'Wearwise',version:1,exportedAt:new Date().toISOString(),logs},null,2)],{type:'application/json'});let u=URL.createObjectURL(blob);let a=document.createElement('a');a.href=u;a.download=`wearwise-backup-${today()}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(u),2000)});
 $('import').addEventListener('change',async e=>{const file=e.target.files[0];if(!file)return;try{let data=JSON.parse(await file.text());if(!Array.isArray(data.logs)||data.logs.some(x=>!x.id||!x.date||!x.base))throw Error('Not a valid Wearwise backup');if(!confirm(`Replace ${logs.length} local records with ${data.logs.length} imported records?`))return;logs=data.logs;save();alert('Backup imported.')}catch(err){alert('Import failed: '+err.message)}finally{e.target.value=''}});
 $('reset').addEventListener('click',()=>{if(confirm('Replace all current local logs with the original 25-day starter dataset? Export a backup first.')){logs=clone(window.STARTER);save();alert('Starter dataset restored.')}});

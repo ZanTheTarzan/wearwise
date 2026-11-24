@@ -1,4 +1,4 @@
-# Wearwise — v1
+# Wearwise — v1.1
 
 Mobile-friendly progressive web app for weather-based personal clothing recommendations.
 
@@ -25,3 +25,15 @@ Mobile-friendly progressive web app for weather-based personal clothing recommen
 - Full historical hourly conditions were not imported; historical summary weather values are approximate and should not be treated as exact hourly observations.
 - Location search can select the first matching place when you type a destination but do not click a suggestion; select a suggestion for best accuracy.
 - A free/noncommercial Open-Meteo tier may have usage conditions; review terms if publicly distributing/commercializing the app.
+
+## v1.1 update
+
+My data now has expandable saved weather summaries and hourly forecast tables. Save confirmation explicitly states when weather was or was not attached. Existing local data and backup format are retained. Export your JSON backup before deploying updates.
+
+
+## v1.2: automatic snapshots
+
+- The Daily log save button now retrieves matching date-and-location hourly weather automatically; a Forecast-tab lookup is no longer required.
+- If the weather request fails, the app asks for explicit permission before saving an entry without a weather snapshot.
+- My data now offers **Attach available weather** on user-created records that have none, where the date is within the supported window. This fetches weather afterward and does **not** recover the exact forecast issued on the original date.
+- Weather fields in the snapshot are forecast/provider data, **not** independently observed measurements. Data are saved in browser local storage on that device; export backups regularly.
