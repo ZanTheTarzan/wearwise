@@ -1,4 +1,4 @@
-# Wearwise — v1.3
+# Wearwise — v1.4
 
 Mobile-friendly progressive web app for weather-based personal clothing recommendations.
 
@@ -13,7 +13,7 @@ Mobile-friendly progressive web app for weather-based personal clothing recommen
 ## What is included
 
 - Open-Meteo destination lookup and 16-day hourly forecast API (internet connection required for fresh weather).
-- Personal clothing recommendations that use temperature, feels-like, wind, rain, activity, and nearest matching historical daily clothing summaries.
+- Personal clothing recommendations that rank previously successful logged outfit combinations by similarity of weather and activity, accounting for negative comfort feedback.
 - 25 transcribed historical **daily summaries** (October 29 through November 23, excluding days with no logs), including clothing and comfort notes. The 625 originally pasted hourly observations are **not** reproduced here. New daily logs can capture actual full forecast snapshots.
 - Locally stored records, export/import, PWA home-screen support and offline reopening of cached app shell.
 
@@ -43,4 +43,20 @@ My data now has expandable saved weather summaries and hourly forecast tables. S
 - Settings → Manage your clothing options: add, rename, or delete choices for bottoms, base layers, additional layers and outer layers.
 - New options immediately appear in Daily log menus; old logs are never altered when clothing choices change.
 - Wardrobe customizations stay in the device's local storage and are now included in JSON exports. Importing older backups without wardrobe data leaves current choices unchanged.
-- The recommendation heuristic still uses existing clothing patterns and hardcoded baseline layers; adding an item to the wardrobe does not automatically teach the model its warmth characteristics.
+- Replaced in v1.4: the recommender now uses empirical feedback and does not hardcode garment warmth. Newly added garments require logged successful wear before recommendation.
+
+## v1.4: Pattern-based recommendations
+
+- Replaced temperature-to-garment rules with a similarity-based ranking of observed combinations and outcomes. Weather variables influence similarity, not fixed garment warmth ratings.
+- Only outfits with at least one **good** or **perfect** result are recommended. Hot, cold, and mixed outcomes contribute negative or cautious evidence.
+- Exact outfit combinations use base, additional layer, outer layer, and bottoms. Removed wardrobe items do not appear in future suggestions; historical logs remain unchanged.
+- Confidence reflects proximity and amount of supporting evidence. New garments require successful logs before they can be recommended.
+- Saved data and JSON backups use the same format as earlier versions. This is an experimental model and is not a validated statistical prediction of comfort.
+
+### Update instructions and data safety
+1. On your current site, go to **My data → Export JSON backup** before updating.
+2. Extract the ZIP and upload its **eight** files directly into the root of your existing GitHub repository, replacing matching filenames and adding `pattern.js`.
+3. Confirm the GitHub Pages deployment completes, reload Safari/Chrome, and check the footer shows **Wearwise v1.4**.
+4. Check that your old logs still appear. Do not clear site data; histories are browser-local.
+
+The algorithm's confidence labels are descriptive, not calibrated accuracy probabilities. Only logged comfort categories (perfect/good/hot/cold/mixed) are used for scores. Notes are shown as evidence but not automatically interpreted as labels.
